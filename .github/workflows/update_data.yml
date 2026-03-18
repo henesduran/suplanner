@@ -33,7 +33,8 @@ jobs:
           git config --global user.name 'CourseBot'
           git config --global user.email 'bot@noreply.github.com'
           
-          git add frontend/public/data.json
+          git add frontend/public/data_current.json frontend/public/data_previous.json || true
+          git add frontend/public/data.json || true
 
           if git diff --staged --quiet; then
             echo "✅ No change is seen, skipping update."

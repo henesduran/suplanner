@@ -1,47 +1,81 @@
 import os
 import shutil
-import pulldata
+from pulldata import master as pull_master
 import normalize_data
 import minimize
-DESTINATION_PATH = os.path.join("..", "frontend", "public", "data.json")
+
+DEST_PUBLIC_DIR = os.path.join("..", "frontend", "public")
+
+
+def run_pipeline(index: int, label: str):
+    print(f"\nRunning pipeline for term index={index} label={label}")
+
+    raw_name = f"raw_courses_{label}.json"
+    processed_name = f"processed_{label}.json"
+    data_name = f"data_{label}.json"
+
+    try:
+        print("--- scraping ---")
+        pull_master(term_index=index, output_name=raw_name)
+    except Exception as e:
+        print(f"Scraping failed for {label}: {e}")
+        return False
+
+    try:
+        print("--- normalizing ---")
+        normalize_data.normalize(input_file=raw_name, output_file=processed_name)
+    except Exception as e:
+        print(f"Normalization failed for {label}: {e}")
+        return False
+
+    try:
+        print("--- minimizing ---")
+        minimize.minimize_data(input_file=processed_name, output_file=data_name)
+    except Exception as e:
+        print(f"Minimization failed for {label}: {e}")
+        return False
+
+    # ensure destination
+    os.makedirs(DEST_PUBLIC_DIR, exist_ok=True)
+    dest_path = os.path.join(DEST_PUBLIC_DIR, data_name)
+
+    if os.path.exists(data_name):
+        shutil.move(data_name, dest_path)
+        print(f"Moved {data_name} -> {dest_path}")
+    else:
+        print(f"Expected {data_name} but not found.")
+        return False
+
+    # cleanup intermediates
+    for f in [raw_name, processed_name]:
+        if os.path.exists(f):
+            os.remove(f)
+
+    return True
+
 
 def main():
     print("Update process started...")
 
-    print("--- 1. Scraping ---")
-    try:
-        pulldata.master() 
-    except Exception as e:
-        print(f"Error in scraping: {e}")
-        return
+    ok_current = run_pipeline(0, 'current')
+    ok_previous = run_pipeline(1, 'previous')
 
-    print("--- 2. Normalization ---")
-    try:
-        normalize_data.normalize()
-    except Exception as e:
-        print(f"Error in normalization: {e}")
-        return
-
-    print("--- 3. Minimization ---")
-    try:
-        minimize.minimize_data()
-    except Exception as e:
-        print(f"Error in minimization: {e}")
-        return
-
-    source = "data.json"
-    
-    if os.path.exists(source):
-        os.makedirs(os.path.dirname(DESTINATION_PATH), exist_ok=True)
-        
-        shutil.move(source, DESTINATION_PATH)
-        print(f"Success! Data updated and moved to: {DESTINATION_PATH}")
-        
-        for f in ["raw_courses.json", "processed_data.json"]:
-            if os.path.exists(f):
-                os.remove(f)
+    if ok_current and ok_previous:
+        print("Both pipelines completed successfully.")
     else:
-        print(f"Error: {source} was not generated.")
+        print("One or more pipelines failed. Check logs above.")
+
+    # For backward compatibility, ensure data.json points to the current dataset
+    try:
+        if ok_current:
+            src = os.path.join(DEST_PUBLIC_DIR, 'data_current.json')
+            legacy = os.path.join(DEST_PUBLIC_DIR, 'data.json')
+            if os.path.exists(src):
+                shutil.copy2(src, legacy)
+                print(f"Updated legacy file {legacy} from {src}")
+    except Exception as e:
+        print(f"Failed to update legacy data.json: {e}")
+
 
 if __name__ == "__main__":
     main()

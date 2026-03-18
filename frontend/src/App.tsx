@@ -91,6 +91,7 @@ function App() {
   const [loadingCourses, setLoadingCourses] = useState(true);
   const [copied, setCopied] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
+  const [activeTerm, setActiveTerm] = useState<'current' | 'previous'>('current');
 
   useEffect(() => {
     if (darkMode) {
@@ -142,7 +143,8 @@ function App() {
 
   useEffect(() => {
     setLoadingCourses(true);
-    fetch(import.meta.env.BASE_URL + 'data.json')
+    const path = `${import.meta.env.BASE_URL}data_${activeTerm}.json`;
+    fetch(path)
       .then((res) => res.json())
       .then((data) => {
         setCourses(data);
@@ -152,7 +154,7 @@ function App() {
         console.error("API Error:", err);
         setLoadingCourses(false);
       });
-  }, []);
+  }, [activeTerm]);
 
 
   useEffect(() => {
@@ -354,7 +356,7 @@ function App() {
             <div className="p-5 pb-0 flex items-start justify-between">
               <div>
                 <h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">Course Planner</h1>
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Termcode: 202502</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Termcode: <span onClick={() => setActiveTerm(prev => prev === 'current' ? 'previous' : 'current')} className="cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 font-mono">202502</span></p>
               </div>
 
               <div className="flex items-center gap-1">

@@ -26,9 +26,9 @@ def process_batch(batch, soup, term_code):
         print(f"Batch processing error {batch}: {e}")
         return []
 
-def master():
+def master(term_index=0, output_name='raw_courses.json'):
     session = requests.session()
-    subject_codes, soup, term_code = getSubjects(session)
+    subject_codes, soup, term_code = getSubjects(session, term_index=term_index)
     if not term_code:
         print("Term code not found.")
         return
@@ -54,9 +54,9 @@ def master():
 
     print(f"Scrape complete. Total sections: {len(all_courses_data)}")
     
-    save_grouped_format(all_courses_data)
+    save_grouped_format(all_courses_data, filename=output_name)
 
-def getSubjects(session):
+def getSubjects(session, term_index=0):
     FALLBACK_SUBJECTS = ['AL', 'ACC', 'GR', 'ANTH', 'ARA', 'BAN', 'CHEM', 'CIP', 'CS', 'CONF', 'CULT', 'DSA', 'DS', 'ECON', 'EE', 'ETM', 'ENRG', 'ENS', 'ENG', 'ENT', 'ES', 'FIN', 'GEN', 'GER', 'HART', 'HIST', 'HUM', 'IE', 'IF', 'IR', 'LAW', 'LIT', 'MGMT', 'MRES', 'MFE', 'MFG', 'MKTG', 'MAT', 'MATH', 'ME', 'BIO', 'NS', 'OPIM', 'ORG', 'PERS', 'PHIL', 'PHYS', 'PSIR', 'POLS', 'PROJ', 'XM', 'PSY', 'QL', 'SEC', 'SPS', 'SOC', 'TLL', 'TS', 'TUR', 'VA']
 
     headers = {
@@ -83,9 +83,15 @@ def getSubjects(session):
         terms = [t for t in terms if not t[0].endswith('03')]
         
         terms.sort(key=lambda x: x[0], reverse=True)
-        latest_term_code, latest_term_name = terms[0]
+        if not terms:
+            return FALLBACK_SUBJECTS, None, None
+
+        if term_index < 0 or term_index >= len(terms):
+            term_index = 0
+
+        selected_term_code, selected_term_name = terms[term_index]
         
-        payload = {"p_term": latest_term_code, "p_calling_proc": "P_DispDynSched"}
+        payload = {"p_term": selected_term_code, "p_calling_proc": "P_DispDynSched"}
         
         form = soup_start.find("form")
         if form:
@@ -99,11 +105,11 @@ def getSubjects(session):
         subject_select = soup_result.find("select", {"name": "sel_subj"})
 
         if not subject_select:
-            return FALLBACK_SUBJECTS, soup_result, latest_term_code
+            return FALLBACK_SUBJECTS, soup_result, selected_term_code
 
         all_subjects = [opt.get("value") for opt in subject_select.find_all("option") if opt.get("value") not in ["dummy", "%"]]
         
-        return all_subjects, soup_result, latest_term_code
+        return all_subjects, soup_result, selected_term_code
 
     except Exception as e:
         print(f"Subject fetch error: {e}")
@@ -235,7 +241,7 @@ def parse_detailed_schedule(html_content, session, term_code):
         parsed_courses.append(course_obj)
     return parsed_courses
 
-def save_grouped_format(flat_data):
+def save_grouped_format(flat_data, filename='raw_courses.json'):
     grouped = {}
     for item in flat_data:
         code = item["code"]
@@ -255,9 +261,9 @@ def save_grouped_format(flat_data):
         }
         grouped[code]["sections"].append(section_obj)
     
-    with open("raw_courses.json", "w", encoding="utf-8") as f:
+    with open(filename, "w", encoding="utf-8") as f:
         json.dump(grouped, f, indent=4, ensure_ascii=False)
-    print("Saved grouped data to raw_courses.json")
+    print(f"Saved grouped data to {filename}")
 
 if __name__ == "__main__":
     master()

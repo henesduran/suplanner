@@ -1,8 +1,9 @@
 import json
 import os
 
-INPUT_FILE = "raw_courses.json" 
-OUTPUT_FILE = "processed_data.json"
+# Defaults kept for backward compatibility
+DEFAULT_INPUT_FILE = "raw_courses.json"
+DEFAULT_OUTPUT_FILE = "processed_data.json"
 
 def parse_time_to_minutes(time_str: str):
     if not time_str: return None
@@ -25,12 +26,12 @@ def map_day_to_index(day_char):
     mapping = { "M": 0, "T": 1, "W": 2, "R": 3, "F": 4 }
     return mapping.get(day_char, -1)
 
-def normalize():
-    if not os.path.exists(INPUT_FILE):
-        print(f"{INPUT_FILE} not found.")
+def normalize(input_file: str = DEFAULT_INPUT_FILE, output_file: str = DEFAULT_OUTPUT_FILE):
+    if not os.path.exists(input_file):
+        print(f"{input_file} not found.")
         return
 
-    with open(INPUT_FILE, "r", encoding="UTF-8") as f:
+    with open(input_file, "r", encoding="UTF-8") as f:
         data = json.load(f)
     
     processed_count = 0
@@ -60,7 +61,7 @@ def normalize():
                 
                 processed_count += 1
 
-    with open(OUTPUT_FILE, "w", encoding="UTF-8") as f:
+    with open(output_file, "w", encoding="UTF-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
     
     print(f"Normalization complete. {processed_count} sections processed.")

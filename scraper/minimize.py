@@ -7,16 +7,16 @@ KEYS_TO_REMOVE = [
     "schedule_type",
 ]
 
-INPUT_FILE = 'processed_data.json'
-OUTPUT_FILE = 'data.json'
+DEFAULT_INPUT_FILE = 'processed_data.json'
+DEFAULT_OUTPUT_FILE = 'data.json'
 
-def minimize_data():
-    if not os.path.exists(INPUT_FILE):
-        print(f"{INPUT_FILE} not found.")
+def minimize_data(input_file: str = DEFAULT_INPUT_FILE, output_file: str = DEFAULT_OUTPUT_FILE):
+    if not os.path.exists(input_file):
+        print(f"{input_file} not found.")
         return
 
-    print(f"Reading {INPUT_FILE}...")
-    with open(INPUT_FILE, 'r', encoding='utf-8') as f:
+    print(f"Reading {input_file}...")
+    with open(input_file, 'r', encoding='utf-8') as f:
         data = json.load(f)
 
     for course_code, course_data in data.items():
@@ -29,10 +29,10 @@ def minimize_data():
                                 del slot[key]
 
     print("Minimizing...")
-    with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
+    with open(output_file, 'w', encoding='utf-8') as f:
         json.dump(data, f, separators=(',', ':'), ensure_ascii=False)
     
-    print(f"Done. Saved to {OUTPUT_FILE}")
+    print(f"Done. Saved to {output_file}")
 
 if __name__ == "__main__":
     minimize_data()
