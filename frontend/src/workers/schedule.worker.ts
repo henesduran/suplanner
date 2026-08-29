@@ -1,10 +1,10 @@
 import { runScheduler } from "../logic/scheduler";
 
 self.onmessage = (e: MessageEvent) => {
-  const { selected, courses, constraints, pinnedSections } = e.data;
+  const { selected, courses, constraints, pinnedSections, allowConflict } = e.data;
 
   try {
-    const result = runScheduler(selected, courses, constraints, pinnedSections);
+    const result = runScheduler(selected, courses, constraints, pinnedSections, allowConflict);
 
     if (constraints.compact && result.length > 0) {
       result.sort((programA: any, programB: any) => calculateGapScore(programA) - calculateGapScore(programB));

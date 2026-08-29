@@ -69,6 +69,112 @@ function Coursegrid({ sections }: Props) {
     }
   };
 
+  // Build lane layout per day so that overlapping lectures are shown
+  // side by side instead of one covering the other. Only the clusters of
+  // lectures that actually overlap are divided; standalone lectures keep the
+  // full column width.
+  const blocks: {
+    key: string;
+    section: Section;
+    sch: Section["schedule"][number];
+    i: number;
+    rowStart: number;
+    rowSpan: number;
+    colStart: number;
+  }[] = [];
+
+  sections.forEach((section) => {
+    section.schedule.forEach((sch, i) => {
+      blocks.push({
+        key: `${section.code}-${sch.day_index}-${i}`,
+        section,
+        sch,
+        i,
+        rowStart: getGridRowStart(sch.start_min),
+        rowSpan: getGridRowSpan(sch.start_min, sch.end_min),
+        colStart: sch.day_index + 2,
+      });
+    });
+  });
+
+  const positioned = new Map<string, { left: number; width: number; narrow: boolean }>();
+  const blocksByDay: Record<number, typeof blocks> = {};
+
+  for (const block of blocks) {
+    if (block.sch.day_index < 0) continue;
+    if (!blocksByDay[block.sch.day_index]) blocksByDay[block.sch.day_index] = [];
+    blocksByDay[block.sch.day_index].push(block);
+  }
+
+  for (const dayBlocks of Object.values(blocksByDay)) {
+    // Union-Find to group overlapping lectures into connected components
+    const parent = dayBlocks.map((_, i) => i);
+    const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+    const union = (x: number, y: number) => {
+      const rx = find(x);
+      const ry = find(y);
+      if (rx !== ry) parent[ry] = rx;
+    };
+
+    for (let x = 0; x < dayBlocks.length; x++) {
+      for (let y = x + 1; y < dayBlocks.length; y++) {
+        const a = dayBlocks[x];
+        const b = dayBlocks[y];
+        const aEnd = a.rowStart + a.rowSpan;
+        const bEnd = b.rowStart + b.rowSpan;
+        if (a.rowStart < bEnd && b.rowStart < aEnd) {
+          union(x, y);
+        }
+      }
+    }
+
+    const components = new Map<number, typeof dayBlocks>();
+    dayBlocks.forEach((block, i) => {
+      const root = find(i);
+      if (!components.has(root)) components.set(root, []);
+      components.get(root)!.push(block);
+    });
+
+    for (const component of components.values()) {
+      // Standalone lecture: full width, no shrinking
+      if (component.length === 1) {
+        const block = component[0];
+        positioned.set(block.key, {
+          left: 0,
+          width: 100,
+          narrow: false,
+        });
+        continue;
+      }
+
+      component.sort((a, b) => a.rowStart - b.rowStart || b.rowSpan - a.rowSpan);
+
+      const laneEnds: number[] = [];
+      const laneOf: Record<string, number> = {};
+
+      for (const block of component) {
+        let lane = laneEnds.findIndex((end) => end <= block.rowStart);
+        if (lane === -1) {
+          lane = laneEnds.length;
+          laneEnds.push(0);
+        }
+        laneOf[block.key] = lane;
+        laneEnds[lane] = block.rowStart + block.rowSpan;
+      }
+
+      const laneCount = laneEnds.length;
+      const width = laneCount > 0 ? 100 / laneCount : 100;
+
+      for (const block of component) {
+        positioned.set(block.key, {
+          left: laneOf[block.key] * width,
+          width,
+          narrow: true,
+        });
+      }
+    }
+  }
+
 
   return (
     <div className="h-full overflow-auto bg-gray-50 dark:bg-slate-900 p-4 transition-colors duration-300">
@@ -116,63 +222,76 @@ function Coursegrid({ sections }: Props) {
             const colStart = sch.day_index + 2;
             const colorClass = getColorByCourseCode(section.code);
             const isCopied = copiedCrn === section.crn;
+            const pos = sch.day_index >= 0 ? positioned.get(`${section.code}-${sch.day_index}-${i}`) : null;
+            const compact = !!pos?.narrow && rowSpan <= 1;
 
             return (
               <div
-  key={`${section.code}-${sch.day_index}-${i}`}
-  onClick={(e)=>(handleCopyCRN(section.crn,e))}
-  className={`
-    ${colorClass}
-    relative
-    text-white
-    p-1 text-xs
-    border-2
-    rounded shadow-md
-    hover:brightness-110
-    cursor-pointer
-    active:scale-95
-    transition-all
-    z-10
-    flex flex-col
-    overflow-hidden
-    h-full
-  `}
-  title={section.crn ? `Click to copy CRN: ${section.crn}` : section.code}
-  style={{
-    gridColumn: colStart,
-    gridRow: `${rowStart} / span ${rowSpan}`,
-  }}
->
-  {isCopied && (
-    <div className="transition-all absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-[0.5px] z-20 animate-in fade-in zoom-in duration-200">
-      <svg className="w-6 h-6 text-white mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-      </svg>
-      <span className="font-bold text-white drop-shadow-md text-[10px]">Copied CRN!</span>
-    </div>
-  )}
+                key={`${section.code}-${sch.day_index}-${i}`}
+                className="relative"
+                style={{
+                  gridColumn: colStart,
+                  gridRow: `${rowStart} / span ${rowSpan}`,
+                }}
+              >
+                <div
+                  onClick={(e)=>(handleCopyCRN(section.crn,e))}
+                  className={`
+                    ${colorClass}
+                    absolute
+                    inset-y-0
+                    text-white
+                    ${compact ? "p-0.5" : "p-1"}
+                    ${compact ? "text-[10px]" : "text-xs"}
+                    ${compact ? "border" : "border-2"}
+                    rounded shadow-md
+                    hover:brightness-110
+                    cursor-pointer
+                    active:scale-95
+                    transition-all
+                    z-10
+                    flex flex-col
+                    overflow-hidden
+                  `}
+                  style={pos ? { left: `${pos.left}%`, width: `${pos.width}%` } : { left: 0, right: 0 }}
+                  title={section.crn ? `Click to copy CRN: ${section.crn}` : section.code}
+                >
+                  {isCopied && (
+                    <div className="transition-all absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-[0.5px] z-20 animate-in fade-in zoom-in duration-200">
+                      <svg className="w-6 h-6 text-white mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                      <span className="font-bold text-white drop-shadow-md text-[10px]">Copied CRN!</span>
+                    </div>
+                  )}
 
-  <div className="flex justify-between items-start">
-    <div className="font-bold truncate">
-      {section.code}
-    </div>
-    <div className="text-[9px] font-bold whitespace-nowrap">
-      {sch.time}
-    </div>
-  </div>
+                  <div className={`flex justify-between items-start ${compact ? "gap-0.5" : "gap-1"}`}>
+                    <div className="font-bold break-words min-w-0 flex-1 leading-tight">
+                      {section.code}
+                      {compact && section.section && (
+                        <span className="opacity-80 font-medium"> · {section.section}</span>
+                      )}
+                    </div>
+                    <div className={`${compact ? "text-[7px]" : "text-[9px]"} font-bold text-right break-words shrink-0 ${compact ? "max-w-[40%]" : "max-w-[48%]"} leading-tight`}>
+                      {sch.time}
+                    </div>
+                  </div>
 
-  <div className="text-[10px] opacity-70 truncate">
-    {section.section}
-  </div>
+                  {!compact && (
+                    <div className="text-[10px] opacity-70 break-words leading-tight">
+                      {section.section}
+                    </div>
+                  )}
 
-  <div className="flex-1" />
+                  <div className="flex-1" />
 
-  {sch.where && (
-    <div className="text-[10px] font-bold truncate">
-      {sch.where}
-    </div>
-  )}
-</div>
+                  {sch.where && (
+                    <div className={`${compact ? "text-[7px]" : "text-[10px]"} font-bold break-words leading-tight`}>
+                      {sch.where}
+                    </div>
+                  )}
+                </div>
+              </div>
             );
           })
         )}
