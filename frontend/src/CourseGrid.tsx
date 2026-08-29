@@ -70,7 +70,9 @@ function Coursegrid({ sections }: Props) {
   };
 
   // Build lane layout per day so that overlapping lectures are shown
-  // side by side instead of one covering the other.
+  // side by side instead of one covering the other. Only the clusters of
+  // lectures that actually overlap are divided; standalone lectures keep the
+  // full column width.
   const blocks: {
     key: string;
     section: Section;
@@ -95,7 +97,7 @@ function Coursegrid({ sections }: Props) {
     });
   });
 
-  const positioned = new Map<string, { left: number; width: number; conflicts: boolean }>();
+  const positioned = new Map<string, { left: number; width: number; narrow: boolean }>();
   const blocksByDay: Record<number, typeof blocks> = {};
 
   for (const block of blocks) {
@@ -105,24 +107,14 @@ function Coursegrid({ sections }: Props) {
   }
 
   for (const dayBlocks of Object.values(blocksByDay)) {
-    dayBlocks.sort((a, b) => a.rowStart - b.rowStart || b.rowSpan - a.rowSpan);
-
-    const laneEnds: number[] = [];
-    const laneOf: Record<string, number> = {};
-
-    for (const block of dayBlocks) {
-      let lane = laneEnds.findIndex((end) => end <= block.rowStart);
-      if (lane === -1) {
-        lane = laneEnds.length;
-        laneEnds.push(0);
-      }
-      laneOf[block.key] = lane;
-      laneEnds[lane] = block.rowStart + block.rowSpan;
-    }
-
-    const laneCount = laneEnds.length;
-    const width = laneCount > 0 ? 100 / laneCount : 100;
-    const conflictKeys = new Set<string>();
+    // Union-Find to group overlapping lectures into connected components
+    const parent = dayBlocks.map((_, i) => i);
+    const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+    const union = (x: number, y: number) => {
+      const rx = find(x);
+      const ry = find(y);
+      if (rx !== ry) parent[ry] = rx;
+    };
 
     for (let x = 0; x < dayBlocks.length; x++) {
       for (let y = x + 1; y < dayBlocks.length; y++) {
@@ -131,18 +123,55 @@ function Coursegrid({ sections }: Props) {
         const aEnd = a.rowStart + a.rowSpan;
         const bEnd = b.rowStart + b.rowSpan;
         if (a.rowStart < bEnd && b.rowStart < aEnd) {
-          conflictKeys.add(a.key);
-          conflictKeys.add(b.key);
+          union(x, y);
         }
       }
     }
 
-    for (const block of dayBlocks) {
-      positioned.set(block.key, {
-        left: laneOf[block.key] * width,
-        width,
-        conflicts: conflictKeys.has(block.key),
-      });
+    const components = new Map<number, typeof dayBlocks>();
+    dayBlocks.forEach((block, i) => {
+      const root = find(i);
+      if (!components.has(root)) components.set(root, []);
+      components.get(root)!.push(block);
+    });
+
+    for (const component of components.values()) {
+      // Standalone lecture: full width, no shrinking
+      if (component.length === 1) {
+        const block = component[0];
+        positioned.set(block.key, {
+          left: 0,
+          width: 100,
+          narrow: false,
+        });
+        continue;
+      }
+
+      component.sort((a, b) => a.rowStart - b.rowStart || b.rowSpan - a.rowSpan);
+
+      const laneEnds: number[] = [];
+      const laneOf: Record<string, number> = {};
+
+      for (const block of component) {
+        let lane = laneEnds.findIndex((end) => end <= block.rowStart);
+        if (lane === -1) {
+          lane = laneEnds.length;
+          laneEnds.push(0);
+        }
+        laneOf[block.key] = lane;
+        laneEnds[lane] = block.rowStart + block.rowSpan;
+      }
+
+      const laneCount = laneEnds.length;
+      const width = laneCount > 0 ? 100 / laneCount : 100;
+
+      for (const block of component) {
+        positioned.set(block.key, {
+          left: laneOf[block.key] * width,
+          width,
+          narrow: true,
+        });
+      }
     }
   }
 
@@ -194,6 +223,7 @@ function Coursegrid({ sections }: Props) {
             const colorClass = getColorByCourseCode(section.code);
             const isCopied = copiedCrn === section.crn;
             const pos = sch.day_index >= 0 ? positioned.get(`${section.code}-${sch.day_index}-${i}`) : null;
+            const compact = !!pos?.narrow && rowSpan <= 1;
 
             return (
               <div
@@ -211,8 +241,9 @@ function Coursegrid({ sections }: Props) {
                     absolute
                     inset-y-0
                     text-white
-                    p-1 text-xs
-                    border-2
+                    ${compact ? "p-0.5" : "p-1"}
+                    ${compact ? "text-[10px]" : "text-xs"}
+                    ${compact ? "border" : "border-2"}
                     rounded shadow-md
                     hover:brightness-110
                     cursor-pointer
@@ -234,31 +265,28 @@ function Coursegrid({ sections }: Props) {
                     </div>
                   )}
 
-                  <div className="flex justify-between items-start gap-1">
-                    <div className="font-bold break-words min-w-0 flex-1">
+                  <div className={`flex justify-between items-start ${compact ? "gap-0.5" : "gap-1"}`}>
+                    <div className="font-bold break-words min-w-0 flex-1 leading-tight">
                       {section.code}
+                      {compact && section.section && (
+                        <span className="opacity-80 font-medium"> · {section.section}</span>
+                      )}
                     </div>
-                    {pos?.conflicts && (
-                      <span
-                        className="text-[9px] font-bold bg-black/30 rounded-full px-1 leading-4 shrink-0"
-                        title="This lecture conflicts with another selected lecture"
-                      >
-                        ⚠
-                      </span>
-                    )}
-                    <div className="text-[9px] font-bold text-right break-words shrink-0 max-w-[48%] leading-tight">
+                    <div className={`${compact ? "text-[7px]" : "text-[9px]"} font-bold text-right break-words shrink-0 ${compact ? "max-w-[40%]" : "max-w-[48%]"} leading-tight`}>
                       {sch.time}
                     </div>
                   </div>
 
-                  <div className="text-[10px] opacity-70 break-words leading-tight">
-                    {section.section}
-                  </div>
+                  {!compact && (
+                    <div className="text-[10px] opacity-70 break-words leading-tight">
+                      {section.section}
+                    </div>
+                  )}
 
                   <div className="flex-1" />
 
                   {sch.where && (
-                    <div className="text-[10px] font-bold break-words leading-tight">
+                    <div className={`${compact ? "text-[7px]" : "text-[10px]"} font-bold break-words leading-tight`}>
                       {sch.where}
                     </div>
                   )}
