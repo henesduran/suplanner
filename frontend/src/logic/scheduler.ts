@@ -107,6 +107,7 @@ function solveScheduleRecursive(
   allCourses: GroupedCourses,
   constraints: SchedulerConstraints,
   pinnedSections: Record<string, string> = {},
+  allowConflict: Record<string, string[]> = {},
   maxResults = 5000
 ): any[][] {
   const initialMask = calculateConstraintMask(constraints);
@@ -143,17 +144,44 @@ function solveScheduleRecursive(
 
   const validSchedules: any[][] = [];
 
-  function backtrack(courseIdx: number, currentPath: Section[], combinedMask: bigint): boolean {
+  function canConflict(
+    code: string,
+    candidateMask: bigint,
+    path: { code: string; mask: bigint }[],
+    allowMap: Record<string, string[]>
+  ): boolean {
+    const currentAllows = allowMap[code] ?? [];
+
+    // Overlap is allowed only between this specific pair: either this course
+    // lists the already-placed course, or the placed course lists this one.
+    return path.some((placed) => {
+      if ((placed.mask & candidateMask) === 0n) return false;
+      return currentAllows.includes(placed.code) || (allowMap[placed.code] ?? []).includes(code);
+    });
+  }
+
+  function backtrack(
+    courseIdx: number,
+    currentPath: { code: string; data: Section; mask: bigint }[],
+    combinedMask: bigint
+  ): boolean {
     if (courseIdx === targetCourses.length) {
-      validSchedules.push([...currentPath]);
+      validSchedules.push(currentPath.map((p) => p.data));
       return validSchedules.length >= maxResults;
     }
 
     const currentCourse = targetCourses[courseIdx];
     for (const sectionObj of currentCourse.sections) {
-      if ((combinedMask & sectionObj.mask) !== 0n) continue;
+      const overlaps = (combinedMask & sectionObj.mask) !== 0n;
+      if (overlaps && !canConflict(currentCourse.code, sectionObj.mask, currentPath, allowConflict)) {
+        continue;
+      }
 
-      currentPath.push(sectionObj.data);
+      currentPath.push({
+        code: currentCourse.code,
+        data: sectionObj.data,
+        mask: sectionObj.mask,
+      });
       const newMask = combinedMask | sectionObj.mask;
 
       if (backtrack(courseIdx + 1, currentPath, newMask)) return true;
@@ -210,8 +238,9 @@ export function runScheduler(
   selectedCodes: string[],
   allCourses: GroupedCourses,
   constraints: SchedulerConstraints,
-  pinnedSections: Record<string, string> = {}
+  pinnedSections: Record<string, string> = {},
+  allowConflict: Record<string, string[]> = {}
 ) {
-    const rawSchedules = solveScheduleRecursive(selectedCodes, allCourses, constraints,pinnedSections);
+    const rawSchedules = solveScheduleRecursive(selectedCodes, allCourses, constraints, pinnedSections, allowConflict);
     return groupSchedulesByVisuals(rawSchedules);
 }

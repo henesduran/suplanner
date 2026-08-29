@@ -63,6 +63,13 @@ function App() {
     const saved = localStorage.getItem('suplanner_pinnedSections');
     return saved ? JSON.parse(saved) : {};
   });
+  const [allowConflict, setAllowConflict] = useState<Record<string, string[]>>(() => {
+    if (!savePreferences) return {};
+    const saved = localStorage.getItem('suplanner_allowConflict');
+    if (!saved) return {};
+    const parsed = JSON.parse(saved);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  });
   const [schedules, setSchedules] = useState<any[][]>([]); 
   const [currentIndex, setCurrentIndex] = useState(0);     
   const [loading, setLoading] = useState(false);
@@ -110,6 +117,7 @@ function App() {
       localStorage.removeItem('suplanner_autoCoreqs');
       localStorage.removeItem('suplanner_selected');
       localStorage.removeItem('suplanner_pinnedSections');
+      localStorage.removeItem('suplanner_allowConflict');
       localStorage.removeItem('suplanner_constraints');
       localStorage.removeItem('suplanner_dayOffsOpen');
     } else {
@@ -131,6 +139,10 @@ function App() {
   useEffect(() => {
     if (savePreferences) localStorage.setItem('suplanner_pinnedSections', JSON.stringify(pinnedSections));
   }, [pinnedSections, savePreferences]);
+
+  useEffect(() => {
+    if (savePreferences) localStorage.setItem('suplanner_allowConflict', JSON.stringify(allowConflict));
+  }, [allowConflict, savePreferences]);
 
   useEffect(() => {
     if (savePreferences) localStorage.setItem('suplanner_constraints', JSON.stringify(constraints));
@@ -172,7 +184,8 @@ function App() {
   const handleClearAll = () => {
     setSelected([]);
     setPinnedSections({});
-};
+    setAllowConflict({});
+  };
 
   const toggleCourse = (code: string) => {
     const isRemoving = selected.includes(code);
@@ -180,11 +193,22 @@ function App() {
     const course = courses[code];
 
     if (isRemoving) {
+      const codesToRemove = [code, ...(autoCoreqs && course?.corequisites ? course.corequisites : [])];
       newSelected.delete(code);
 
       if (autoCoreqs && course?.corequisites) {
         course.corequisites.forEach((req: string) => newSelected.delete(req));
       }
+
+      setAllowConflict(prev => {
+        const next: Record<string, string[]> = {};
+        for (const [courseCode, targets] of Object.entries(prev)) {
+          if (codesToRemove.includes(courseCode)) continue;
+          const filtered = targets.filter(t => !codesToRemove.includes(t));
+          if (filtered.length > 0) next[courseCode] = filtered;
+        }
+        return next;
+      });
 
     } else {
       newSelected.add(code);
@@ -217,7 +241,24 @@ function App() {
     }
     return { ...prev, [courseName]: crn };
   });
-};
+  };
+  const toggleAllowConflict = (code: string) => {
+    setAllowConflict(prev => {
+      const next = { ...prev };
+      if (next[code]) delete next[code];
+      else next[code] = [];
+      return next;
+    });
+  };
+  const toggleConflictTarget = (code: string, target: string) => {
+    setAllowConflict(prev => {
+      const current = prev[code] ?? [];
+      return {
+        ...prev,
+        [code]: current.includes(target) ? current.filter(c => c !== target) : [...current, target],
+      };
+    });
+  };
   const generateSchedule = () => { 
     if (selected.length === 0) return alert("Please select a course.");
     
@@ -231,7 +272,8 @@ function App() {
       selected,
       courses,
       constraints,
-      pinnedSections
+      pinnedSections,
+      allowConflict
     });
 
     worker.onmessage = (e) => {
@@ -559,6 +601,80 @@ function App() {
                             >
                               ✕
                             </button>
+                          </div>
+
+                          <div className="mb-1">
+                            <button
+                              onClick={() => toggleAllowConflict(code)}
+                              className={`
+                                w-full flex items-center justify-between p-2 rounded-lg border transition-all cursor-pointer
+                                ${allowConflict[code]
+                                  ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800"
+                                  : "bg-slate-50 dark:bg-slate-700/40 border-slate-200 dark:border-slate-600 hover:border-amber-200 dark:hover:border-amber-800"
+                                }
+                              `}
+                              title="Allow this course to overlap with specific other lectures (e.g. when the instructor allows conflicts)"
+                            >
+                              <span className={`text-[10px] font-bold ${allowConflict[code] ? "text-amber-700 dark:text-amber-300" : "text-slate-500 dark:text-slate-400"}`}>
+                                ⚔️ Allow Conflicts
+                              </span>
+                              <span className={`relative w-8 h-4 flex items-center rounded-full transition-colors duration-300 ${allowConflict[code] ? "bg-amber-500" : "bg-slate-300 dark:bg-slate-600"}`}>
+                                <span className={`absolute w-3 h-3 bg-white rounded-full shadow-md transform transition-transform duration-300 ease-out ${allowConflict[code] ? "translate-x-4" : "translate-x-0.5"}`} />
+                              </span>
+                            </button>
+
+                            {allowConflict[code] && (
+                              <div className="mt-1 p-2 rounded-lg border border-amber-200/60 dark:border-amber-800/60 bg-amber-50/40 dark:bg-amber-900/10">
+                                <div className="text-[9px] font-bold text-amber-700 dark:text-amber-300 uppercase tracking-wide mb-1.5">
+                                  May conflict with:
+                                </div>
+
+                                {selected.filter(other => other !== code).length === 0 ? (
+                                  <div className="text-[10px] text-slate-400 dark:text-slate-500">
+                                    Add another course to pick conflict targets.
+                                  </div>
+                                ) : (
+                                  <div className="space-y-1 max-h-36 overflow-y-auto pr-1 custom-scrollbar">
+                                    {selected.filter(other => other !== code).map(other => {
+                                      const isTarget = allowConflict[code]?.includes(other);
+                                      return (
+                                        <label
+                                          key={other}
+                                          className={`
+                                            flex items-center justify-between gap-2 p-1.5 rounded-md border cursor-pointer transition-all
+                                            ${isTarget
+                                              ? "bg-amber-100 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700"
+                                              : "bg-white dark:bg-slate-700/40 border-slate-200 dark:border-slate-600 hover:border-amber-200 dark:hover:border-amber-800"
+                                            }
+                                          `}
+                                        >
+                                          <span className="flex flex-col min-w-0">
+                                            <span className={`text-[11px] font-bold truncate ${isTarget ? "text-amber-900 dark:text-amber-200" : "text-slate-700 dark:text-slate-300"}`}>
+                                              {other}
+                                            </span>
+                                            <span className="text-[9px] text-slate-400 dark:text-slate-500 truncate">
+                                              {courses[other]?.name}
+                                            </span>
+                                          </span>
+                                          <input
+                                            type="checkbox"
+                                            checked={!!isTarget}
+                                            onChange={() => toggleConflictTarget(code, other)}
+                                            className="accent-amber-500 w-3.5 h-3.5 shrink-0 cursor-pointer"
+                                          />
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+
+                                {(allowConflict[code]?.length ?? 0) === 0 && selected.filter(other => other !== code).length > 0 && (
+                                  <div className="mt-1.5 text-[9px] text-amber-600 dark:text-amber-400 font-semibold">
+                                    No classes selected — conflicts stay blocked.
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
 
                           {courses[code]?.sections && (
