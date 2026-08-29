@@ -30,6 +30,7 @@ This tool is designed to solve the chaos of course registration. It calculates e
 ### 🧠 Smart Scheduling & Controls
 - **🔗 Auto-Corequisites (New):** Don't worry about missing labs. The system automatically adds mandatory corequisites (e.g., IF 100 ↔ IF 100R) when you select a course. Includes a toggle for manual control.
 - **🔒 Section Pinning (New):** Have a favorite professor? Lock a specific section (e.g., "Pin Section A"), and the algorithm will generate schedules **around** that fixed choice.
+- **⚔️ Allow Conflicts (New):** Some professors permit their lectures to overlap. Flip the toggle on any selected course and choose exactly which other classes it may clash with — its labs and recitations are covered automatically.
 - **Conflict-Free Guarantee:** Uses a high-performance **Bitmask Algorithm** to detect overlaps in milliseconds.
 - **Smart Grouping:** Automatically groups schedules that look identical visually to prevent clutter.
 
