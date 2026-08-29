@@ -20,6 +20,7 @@ export interface Section {
 export interface CourseData {
   name: string;
   sections: Section[];
+  corequisites?: string[];
 }
 
 export interface GroupedCourses {
@@ -113,6 +114,51 @@ function solveScheduleRecursive(
   const initialMask = calculateConstraintMask(constraints);
   const targetCourses: { code: string; sections: { data: Section; mask: bigint }[] }[] = [];
 
+  // A lecture and its recitation/lab sections form one family. A conflict
+  // allowance between two courses therefore covers every lecture/lab/recitation
+  // pair inside both families.
+  const familyCache = new Map<string, string[]>();
+  const getFamily = (code: string): string[] => {
+    const cached = familyCache.get(code);
+    if (cached) return cached;
+
+    const family: string[] = [];
+    const seen = new Set<string>([code]);
+    const stack = [code];
+
+    while (stack.length > 0) {
+      const cur = stack.pop()!;
+      family.push(cur);
+      const coreqs = allCourses[cur]?.corequisites ?? [];
+      for (const req of coreqs) {
+        if (!seen.has(req)) {
+          seen.add(req);
+          stack.push(req);
+        }
+      }
+    }
+
+    familyCache.set(code, family);
+    return family;
+  };
+
+  const allowedConflictPairs = new Set<string>();
+  for (const [code, targets] of Object.entries(allowConflict)) {
+    for (const target of targets) {
+      for (const a of getFamily(code)) {
+        for (const b of getFamily(target)) {
+          if (a === b) continue;
+          allowedConflictPairs.add(a < b ? `${a}||${b}` : `${b}||${a}`);
+        }
+      }
+    }
+  }
+
+  const allowsConflict = (a: string, b: string): boolean => {
+    const key = a < b ? `${a}||${b}` : `${b}||${a}`;
+    return allowedConflictPairs.has(key);
+  };
+
   // Data manipulation
   for (const code of selectedCodes) {
     if (!allCourses[code]) continue;
@@ -144,22 +190,6 @@ function solveScheduleRecursive(
 
   const validSchedules: any[][] = [];
 
-  function canConflict(
-    code: string,
-    candidateMask: bigint,
-    path: { code: string; mask: bigint }[],
-    allowMap: Record<string, string[]>
-  ): boolean {
-    const currentAllows = allowMap[code] ?? [];
-
-    // Overlap is allowed only between this specific pair: either this course
-    // lists the already-placed course, or the placed course lists this one.
-    return path.some((placed) => {
-      if ((placed.mask & candidateMask) === 0n) return false;
-      return currentAllows.includes(placed.code) || (allowMap[placed.code] ?? []).includes(code);
-    });
-  }
-
   function backtrack(
     courseIdx: number,
     currentPath: { code: string; data: Section; mask: bigint }[],
@@ -173,8 +203,13 @@ function solveScheduleRecursive(
     const currentCourse = targetCourses[courseIdx];
     for (const sectionObj of currentCourse.sections) {
       const overlaps = (combinedMask & sectionObj.mask) !== 0n;
-      if (overlaps && !canConflict(currentCourse.code, sectionObj.mask, currentPath, allowConflict)) {
-        continue;
+      if (overlaps) {
+        const pairAllowed = currentPath.some(
+          (placed) =>
+            (placed.mask & sectionObj.mask) !== 0n &&
+            allowsConflict(currentCourse.code, placed.code)
+        );
+        if (!pairAllowed) continue;
       }
 
       currentPath.push({

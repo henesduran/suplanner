@@ -235,7 +235,7 @@ function Coursegrid({ sections }: Props) {
                   )}
 
                   <div className="flex justify-between items-start gap-1">
-                    <div className="font-bold truncate">
+                    <div className="font-bold break-words min-w-0 flex-1">
                       {section.code}
                     </div>
                     {pos?.conflicts && (
@@ -246,19 +246,19 @@ function Coursegrid({ sections }: Props) {
                         ⚠
                       </span>
                     )}
-                    <div className="text-[9px] font-bold whitespace-nowrap">
+                    <div className="text-[9px] font-bold text-right break-words shrink-0 max-w-[48%] leading-tight">
                       {sch.time}
                     </div>
                   </div>
 
-                  <div className="text-[10px] opacity-70 truncate">
+                  <div className="text-[10px] opacity-70 break-words leading-tight">
                     {section.section}
                   </div>
 
                   <div className="flex-1" />
 
                   {sch.where && (
-                    <div className="text-[10px] font-bold truncate">
+                    <div className="text-[10px] font-bold break-words leading-tight">
                       {sch.where}
                     </div>
                   )}
