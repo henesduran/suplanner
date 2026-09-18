@@ -4,6 +4,8 @@ import time
 import re
 import json
 import concurrent.futures
+import os
+from datetime import datetime
 
 BASE_URL = "http://suis.sabanciuniv.edu"
 START_URL = "http://suis.sabanciuniv.edu/prod/bwckschd.p_disp_dyn_sched"
@@ -83,7 +85,30 @@ def getSubjects(session):
         terms = [t for t in terms if not t[0].endswith('03')]
         
         terms.sort(key=lambda x: x[0], reverse=True)
-        latest_term_code, latest_term_name = terms[0]
+
+        if not terms:
+            return FALLBACK_SUBJECTS, None, None
+
+        #manual override via environment variable TARGET_TERM
+        target_override = os.environ.get("TARGET_TERM", "").strip()
+        matched_term = None
+        if target_override:
+            for t in terms:
+                if t[0] == target_override:
+                    matched_term = t
+                    break
+
+        if not matched_term:
+            # Sabanci University Academic Calendar ->
+            # months 7-12 : Fall semester   ('01')
+            # months 1-6  : Spring semester ('02')
+            current_month = datetime.now().month
+            target_suffix = '01' if current_month >= 7 else '02'
+            filtered_terms = [t for t in terms if t[0].endswith(target_suffix)]
+            matched_term = filtered_terms[0] if filtered_terms else terms[0]
+
+        latest_term_code, latest_term_name = matched_term
+        print(f"Selected term: {latest_term_code} ({latest_term_name})")
         
         payload = {"p_term": latest_term_code, "p_calling_proc": "P_DispDynSched"}
         
