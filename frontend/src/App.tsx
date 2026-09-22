@@ -11,6 +11,14 @@ type Filters = {
   "lunchBreak": boolean
 }
 const DAYS_map = {"Monday":0, "Tuesday":1, "Wednesday":2, "Thursday":3, "Friday":4};
+
+const getTermCode = () => {
+  const now = new Date();
+  const isFall = now.getMonth() >= 6;
+  const year = isFall ? now.getFullYear() : now.getFullYear() - 1;
+  return `${year}${isFall ? '01' : '02'}`;
+};
+
 function App() {
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -354,7 +362,7 @@ function App() {
             <div className="p-5 pb-0 flex items-start justify-between">
               <div>
                 <h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">Course Planner</h1>
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Termcode: 202502</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Termcode: {getTermCode()}</p>
               </div>
 
               <div className="flex items-center gap-1">
